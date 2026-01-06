@@ -1,0 +1,134 @@
+# migrate to v2.3.0 - FIXED VERSION with init-data.sh
+# to apply: docker compose down -v && docker compose up -d
+networks:
+  n8n-network:
+    driver: bridge
+
+volumes:
+  db_storage:
+  n8n_storage:
+  redis_storage:
+
+x-shared: &shared
+  restart: always
+  environment:
+    # Database - GIỮ NGUYÊN
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+    - DB_POSTGRESDB_USER=${POSTGRES_USER}
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    - DB_POSTGRESDB_SCHEMA=public # THÊM DÒNG NÀY
+
+    # Execution - GIỮ NGUYÊN
+    - EXECUTIONS_MODE=queue
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_HEALTH_CHECK_ACTIVE=true
+
+    # Core settings - GIỮ NGUYÊN
+    - N8N_BASIC_AUTH_ACTIVE=false
+    - N8N_PROTOCOL=http
+    - VUE_APP_URL_BASE_API=http://localhost:5678
+    - WEBHOOK_TUNNEL_URL=http://localhost:5678
+    - WEBHOOK_URL=http://localhost:5678
+    - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    - N8N_SECURE_COOKIE=false
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    - N8N_PORT=5678
+    - N8N_TRUST_PROXY=1
+
+    # Disable features không cần thiết
+    - N8N_AI_ENABLED=false
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PERSONALIZATION_ENABLED=false
+
+    # Thêm các biến mới cho n8n v2
+    - N8N_METRICS=false
+    - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+    - N8N_RELEASE_NOTIFICATIONS_ENABLED=false
+
+    # Data retention
+    - EXECUTIONS_DATA_PRUNE=true
+    - EXECUTIONS_DATA_MAX_AGE=168
+    - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+    - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+    - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+
+    # Security
+    - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=false
+
+    # Performance
+    - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh # THÊM DÒNG NÀY
+
+  volumes:
+    - n8n_storage:/home/node/.n8n
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  networks:
+    - n8n-network
+
+services:
+  postgres:
+    image: postgres:11
+    container_name: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - db_storage:/var/lib/postgresql/data
+      - ./init-data.sh:/docker-entrypoint-initdb.d/init-data.sh # THÊM DÒNG NÀY - QUAN TRỌNG!
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # THÊM start_period
+    networks:
+      - n8n-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_storage:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s # THÊM start_period
+    networks:
+      - n8n-network
+
+  n8n:
+    <<: *shared
+    hostname: n8n
+    container_name: n8n
+    image: n8nio/n8n:2.3.0
+    command: ["start"]
+    ports:
+      - "5678:5678"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 300s # TĂNG lên 5 phút cho migration
+
+  n8n-worker:
+    <<: *shared
+    container_name: n8n_worker
+    image: n8nio/n8n:2.3.0
+    command: ["worker"]
+    depends_on:
+      - n8n
+    healthcheck:
+      disable: true
