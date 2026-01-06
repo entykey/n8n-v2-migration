@@ -73,6 +73,9 @@ x-shared: &shared
 
 services:
   postgres:
+    # [1] FATAL: database files are incompatible with server
+    # [1] DETAIL: The data directory was initialized by PostgreSQL version 11, which is not compatible with this version 15.15.
+    # image: postgres:15-alpine
     image: postgres:11
     container_name: postgres
     restart: always
