@@ -3,51 +3,21 @@ set -e
 
 echo "🚀 Initializing PostgreSQL for n8n..."
 
-psql -v ON_ERROR_STOP=1 \
-  --username "$POSTGRES_USER" \
-  --dbname "$POSTGRES_DB" <<-'EOSQL'
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ================================
--- 1. Required extensions for n8n
--- ================================
+  CREATE SCHEMA IF NOT EXISTS public;
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+  GRANT ALL ON SCHEMA public TO "$POSTGRES_USER";
+  GRANT ALL ON ALL TABLES IN SCHEMA public TO "$POSTGRES_USER";
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO "$POSTGRES_USER";
 
--- ================================
--- 2. Ensure public schema exists
--- ================================
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL ON TABLES TO "$POSTGRES_USER";
 
-CREATE SCHEMA IF NOT EXISTS public;
-
--- ================================
--- 3. Safety permissions
--- ================================
-
-GRANT ALL ON SCHEMA public TO CURRENT_USER;
-GRANT ALL ON ALL TABLES    IN SCHEMA public TO CURRENT_USER;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO CURRENT_USER;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON TABLES TO CURRENT_USER;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-GRANT ALL ON SEQUENCES TO CURRENT_USER;
-
--- ================================
--- 4. Optional but recommended
--- ================================
-
--- Fix search_path (some environments break this)
-ALTER DATABASE CURRENT_DATABASE() SET search_path TO public;
-
--- ================================
--- 5. Diagnostics output
--- ================================
-
-\echo '✅ PostgreSQL initialized for n8n'
-\dx
-
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL ON SEQUENCES TO "$POSTGRES_USER";
 EOSQL
 
-echo "✅ init-data.sh completed successfully"
+echo "✅ PostgreSQL initialized successfully for n8n"
