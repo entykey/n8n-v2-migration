@@ -90,7 +90,8 @@ services:
     <<: *shared
     hostname: n8n
     container_name: n8n
-    image: n8nio/n8n:1.120.4
+    # image: n8nio/n8n:1.120.4
+    image: n8nio/n8n:2.3.0
     command: ["start"]
     ports:
       - "5678:5678" # Sửa port mapping
@@ -98,7 +99,8 @@ services:
   n8n-worker:
     <<: *shared
     container_name: n8n_worker
-    image: n8nio/n8n:1.120.4
+    # image: n8nio/n8n:1.120.4
+    image: n8nio/n8n:2.3.0
     command: ["worker"]
     depends_on:
       - n8n
