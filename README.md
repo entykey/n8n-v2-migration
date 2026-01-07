@@ -43,35 +43,23 @@ Last updated time: January 6, 2026 11:16 AM
 ## 🔐 File `.env`
 
 ```
-# ====================
-# POSTGRESQL DATABASE
-# ====================
-POSTGRES_USER=postgres
+# Uncomment this when its already for production. Don't use production until staging works
+#STAGE=production
+
+# N8N_HOST=n8n.softdreams.vn
+N8N_HOST=localhost # Local test
+
+POSTGRES_DB=n8n
+POSTGRES_USER=n8n_root
 POSTGRES_PASSWORD=Abc@1234
-POSTGRES_DB=n8n_db
-POSTGRES_NON_ROOT_USER=n8n_user
+POSTGRES_NON_ROOT_USER=n8n
 POSTGRES_NON_ROOT_PASSWORD=Abc@1234
 
-# ====================
-# N8N CONFIGURATION
-# ====================
-N8N_HOST=localhost  # Tạm thời dùng localhost để test
-N8N_ENCRYPTION_KEY=Abc@1234Abc@1234Abc@1234Abc@1234
+N8N_ENCRYPTION_KEY=xxx
 
-# ====================
-# TEMPORARY FOR TESTING
-# ====================
-# Comment SSL settings for now
-# N8N_SSL_CERT=/home/certs/fullchain.pem
-# N8N_SSL_KEY=/home/certs/privkey.pem
-
-# Change to HTTP for testing
-N8N_PROTOCOL=http
-WEBHOOK_URL=http://${N8N_HOST}:8443
-WEBHOOK_TUNNEL_URL=http://${N8N_HOST}:8443
-VUE_APP_URL_BASE_API=http://${N8N_HOST}:8443
-N8N_PORT=5678  # Change to default HTTP port
-
+# Disable SSL locally
+# N8N_SSL_CERT=/home/certs/star_softdreams.vn.crt
+# N8N_SSL_KEY=/home/certs/star_softdreams.vn.key
 ```
 
 ⚠️ **RẤT QUAN TRỌNG**
@@ -96,25 +84,58 @@ set -e
 
 echo "🚀 Initializing PostgreSQL for n8n..."
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-  CREATE EXTENSION IF NOT EXISTS pgcrypto;
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+ROOT_USER="${POSTGRES_USER}"
+APP_USER="${POSTGRES_NON_ROOT_USER}"
+APP_PASSWORD="${POSTGRES_NON_ROOT_PASSWORD}"
+APP_DB="${POSTGRES_DB}"
 
-  CREATE SCHEMA IF NOT EXISTS public;
+psql -v ON_ERROR_STOP=1 --username "$ROOT_USER" --dbname postgres <<-EOSQL
+-- Create application user if not exists
+DO \$\$
+BEGIN
+  IF NOT EXISTS (
+    SELECT FROM pg_roles WHERE rolname = '$APP_USER'
+  ) THEN
+    CREATE ROLE $APP_USER LOGIN PASSWORD '$APP_PASSWORD';
+  END IF;
+END
+\$\$;
 
-  GRANT ALL ON SCHEMA public TO "$POSTGRES_USER";
-  GRANT ALL ON ALL TABLES IN SCHEMA public TO "$POSTGRES_USER";
-  GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO "$POSTGRES_USER";
+-- Create database if not exists
+DO \$\$
+BEGIN
+  IF NOT EXISTS (
+    SELECT FROM pg_database WHERE datname = '$APP_DB'
+  ) THEN
+    CREATE DATABASE $APP_DB OWNER $APP_USER;
+  END IF;
+END
+\$\$;
+EOSQL
 
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL ON TABLES TO "$POSTGRES_USER";
+psql -v ON_ERROR_STOP=1 --username "$ROOT_USER" --dbname "$APP_DB" <<-EOSQL
+-- Extensions required by n8n v2.x
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL ON SEQUENCES TO "$POSTGRES_USER";
+GRANT ALL PRIVILEGES ON DATABASE $APP_DB TO $APP_USER;
+
+GRANT USAGE, CREATE ON SCHEMA public TO $APP_USER;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $APP_USER;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $APP_USER;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $APP_USER;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO $APP_USER;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO $APP_USER;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON FUNCTIONS TO $APP_USER;
 EOSQL
 
 echo "✅ PostgreSQL initialized successfully for n8n"
-
 ```
 
 ---
