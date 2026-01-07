@@ -137,10 +137,11 @@ docker compose up -d
 
 ## 🔎 PHASE 2 — Chuẩn bị database cho upgrade (BẮT BUỘC)
 
-### 1️⃣ Vào PostgreSQL
+### 1️⃣ Vào PostgreSQL bằng user `postgres`
 
 ```bash
 dockerexec -it postgres psql -U postgres
+# Or: docker exec -it postgres psql -U postgres
 ```
 
 ### 2️⃣ Xác định DB n8n
@@ -374,6 +375,189 @@ CREATE EXTENSION pgcrypto;
 ➡️ Nguyên nhân: đổi `N8N_ENCRYPTION_KEY`
 
 ➡️ Fix: khôi phục lại key cũ
+
+--- 
+
+## 🛠 Troubleshooting: container PostgreSQL không chạy `init-data.sh` trên host Windows
+
+### ❗ Triệu chứng
+
+- PostgreSQL container start bình thường nhưng:
+    - `n8n` / `n8n_worker` **không kết nối được DB**
+- Log PostgreSQL xuất hiện lỗi:
+
+```
+/bin/bash^M: bad interpreter: No such file or directory
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+FATAL: database "n8n_root" does not exist
+```
+
+---
+
+### 🧠 Nguyên nhân
+
+- File `init-data.sh` được tạo hoặc chỉnh sửa trên **Windows**
+- Windows mặc định dùng **CRLF (`\r\n`)** cho line ending
+- Khi mount vào container Linux:
+    - `/bin/bash` **không hiểu `^M`**
+    - Script **không được thực thi**
+- PostgreSQL đã khởi tạo data directory → **bỏ qua toàn bộ `/docker-entrypoint-initdb.d`**
+- Dẫn đến:
+    - Database / extension / schema **không được tạo**
+    - Service phụ thuộc (n8n, worker) fail khi connect DB
+
+---
+
+### ✅ Cách khắc phục
+
+### 1️⃣ Chuyển line ending của `init-data.sh` sang **LF**
+
+**Cách khuyến nghị (VS Code):**
+
+1. Mở `init-data.sh`
+2. Góc phải dưới → đổi `CRLF` → `LF`
+3. Save file
+
+> ⚠️ Đây là bước bắt buộc, chmod không giải quyết được lỗi này
+> 
+
+---
+
+### 2️⃣ Không cần `chmod` trên Windows
+
+- `chmod` **không tồn tại** trên PowerShell / CMD
+- **Không cần executable bit** vì script được gọi bằng:
+    
+    ```bash
+    /bin/bash init-data.sh
+    ```
+    
+- Docker + PostgreSQL image xử lý việc này nội bộ
+
+---
+
+### 3️⃣ Reset PostgreSQL volume (bắt buộc)
+
+```powershell
+docker compose down-v
+docker compose up-d
+```
+
+> ⚠️ Nếu không xóa volume, PostgreSQL sẽ skip init script vĩnh viễn
+> 
+
+---
+
+### 4️⃣ Kiểm tra log xác nhận thành công
+
+```powershell
+docker logs postgres--tail=30
+```
+
+Kết quả đúng:
+
+```
+running /docker-entrypoint-initdb.d/init-data.sh
+🚀 Initializing PostgreSQL for n8n...
+✅ PostgreSQL initialized successfully for n8n
+
+```
+
+---
+
+### 🛡 Phòng tránh tái diễn (Best Practice)
+
+Thêm file `.gitattributes` ở root repo:
+
+```
+*.sh text eol=lf
+```
+
+* ✔ Đảm bảo mọi script `.sh` luôn dùng LF
+* ✔ Không phụ thuộc OS (Mac / Windows / Linux)
+* ✔ Tránh lỗi khó debug khi deploy
+
+---
+
+### 🧩 Ghi chú thêm
+
+- Lỗi này **chỉ xảy ra khi init lần đầu**
+- Khi đã có data directory:
+    - PostgreSQL **không chạy lại init script**
+- Nếu cần thay đổi logic init:
+    - Phải **xóa volume DB**
+
+---
+
+## 🛠 Troubleshooting: **Mismatch user/password inPostgres**
+
+không phải lỗi n8n v2 hay migration.
+
+Log:
+
+```
+password authentication failedforuser "n8n"
+```
+
+→ n8n **đang đăng nhập bằng user `n8n`**, nhưng **password trong DB ≠ password trong `.env`**.
+
+## 🔧 CÁCH FIX CHUẨN – KHÔNG MẤT DATA
+
+### Bước 1️⃣ Vào Postgres bằng user **postgres**
+
+(chắc chắn tồn tại)
+
+```bash
+dockerexec -it postgres psql -U postgres
+```
+
+---
+
+### Bước 2️⃣ Liệt kê DB & user cho chắc
+
+Trong `psql`:
+
+```sql
+\l
+\du
+```
+
+Ta sẽ thấy:
+
+- database: `n8n_db`
+- role: `n8n`
+
+---
+
+### Bước 3️⃣ Kết nối đúng DB
+
+```sql
+\c n8n_db
+```
+
+---
+
+### Bước 4️⃣ Đổi password cho user `n8n`
+
+⚠️ **password PHẢI đúng với `.env` hiện tại**
+
+```sql
+ALTERUSER n8nWITH PASSWORD'Abc@1234';
+```
+
+Nếu OK, bạn sẽ thấy:
+
+```
+ALTERROLE
+```
+
+---
+
+### Bước 5️⃣ Thoát
+
+```sql
+\q
+```
 
 ---
 

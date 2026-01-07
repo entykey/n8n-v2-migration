@@ -1,6 +1,11 @@
+# networks:
+#   n8n-network:
+#     external: true
+
+# tạo network tự động (local test)
 networks:
   n8n-network:
-    external: true
+    driver: bridge
 
 volumes:
   db_storage:
@@ -14,8 +19,8 @@ x-shared: &shared
     - DB_TYPE=postgresdb
     - DB_POSTGRESDB_HOST=postgres
     - DB_POSTGRESDB_PORT=5432
-    - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-    - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}
+    - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}          # n8n
+    - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}   # n8n
     - DB_POSTGRESDB_PASSWORD=${POSTGRES_NON_ROOT_PASSWORD}
     - DB_POSTGRESDB_SCHEMA=public
 
@@ -26,14 +31,16 @@ x-shared: &shared
 
     # Core
     - N8N_BASIC_AUTH_ACTIVE=false
-    - N8N_PROTOCOL=https
+    # - N8N_PROTOCOL=https
+    - N8N_PORT=8443
+    - N8N_PROTOCOL=http # (local dev)
+    # - N8N_PORT=5678 # (local dev)
     - VUE_APP_URL_BASE_API=https://${N8N_HOST}
     - WEBHOOK_TUNNEL_URL=https://${N8N_HOST}
     - WEBHOOK_URL=https://${N8N_HOST}
     - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
     - N8N_SECURE_COOKIE=false
     - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-    - N8N_PORT=8443
     - N8N_TRUST_PROXY=1
 
     # Disable unused features
@@ -81,11 +88,7 @@ services:
       - db_storage:/var/lib/postgresql/data
       - ./init-data.sh:/docker-entrypoint-initdb.d/init-data.sh
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
-        ]
+      test: ["CMD-SHELL", "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -114,6 +117,7 @@ services:
     command: ["start"]
     ports:
       - "8443:8443"
+      # - "5678:5678" # (local dev)
 
   n8n-worker:
     <<: *shared
