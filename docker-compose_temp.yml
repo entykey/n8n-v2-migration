@@ -1,12 +1,12 @@
 # (For Softdreeam server)
-networks:
-  n8n-network:
-    external: true
-
-# (local test)
 # networks:
 #   n8n-network:
-#     driver: bridge
+#     external: true
+
+# (local test)
+networks:
+  n8n-network:
+    driver: bridge
 
 volumes:
   db_storage:
@@ -27,7 +27,6 @@ x-shared: &shared
     - QUEUE_HEALTH_CHECK_ACTIVE=true
     - N8N_BASIC_AUTH_ACTIVE=false
     - N8N_PROTOCOL=https
-    # - N8N_PROTOCOL=http # Tạm dùng http để test
     - VUE_APP_URL_BASE_API=https://${N8N_HOST}
     - WEBHOOK_TUNNEL_URL=https://${N8N_HOST}
     - WEBHOOK_URL=https://${N8N_HOST}
@@ -44,9 +43,12 @@ x-shared: &shared
     - N8N_PERSONALIZATION_ENABLED=false
 
     # Recommended for v2 (safe)
-    - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
-    - N8N_VERSION_NOTIFICATIONS_ENABLED=false
-    - N8N_RELEASE_NOTIFICATIONS_ENABLED=false
+    # - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+    # - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+    # - N8N_RELEASE_NOTIFICATIONS_ENABLED=false
+
+    # # Timezone
+    # - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
 
   links:
     - postgres
@@ -108,19 +110,15 @@ services:
     container_name: n8n
     environment:
       # THIS IS THE n8n V2 default
-      # but these line caused n8n to forced ready on port 5678, must map "8443:5678"
-      # and it also cause some worflows to be hidden (not lost, you'll see them if rollback)
-      # Works fine with local dev machine but server says: "ERROR: Your n8n server is configured to use a secure cookie, however you are visiting this via an insecure URL"
-      # ref: https://community.n8n.io/t/task-request-timed-out-after-60-seconds/245289/2
+      # https://community.n8n.io/t/task-request-timed-out-after-60-seconds/245289/2
       # - NODES_EXCLUDE='["n8n-nodes-base.executeCommand", "n8n-nodes-base.manualTrigger"]'
       - NODES_EXCLUDE=[]
       - N8N_RUNNERS_ENABLED=true
       # - N8N_RUNNERS_MODE=external # for python
-      - N8N_RUNNERS_MODE=internal # for JS (pick one)
+      - N8N_RUNNERS_MODE=internal # for JS
     command: ["start"]
     ports:
       - "8443:8443"
-      # - "8443:5678"
 
   n8n-worker:
     <<: *shared

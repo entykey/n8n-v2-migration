@@ -20,6 +20,13 @@ Last updated time: January 6, 2026 11:16 AM
 
 ---
 
+## Commands
+```bash
+scp "C:\Users\Admin\Documents\tuan_dev\n8n-v2-migration\docker-compose.yml" root@10.100.110.161:/root/n8n-docker/
+
+scp "C:\Users\Admin\Documents\tuan_dev\docker-compose.yml" root@10.100.110.161:/root/n8n-docker/
+```
+
 ## 🧱 Cấu trúc thư mục
 
 ```
@@ -161,9 +168,67 @@ docker compose up -d
 ### 1️⃣ Vào PostgreSQL bằng user `postgres`
 
 ```bash
-dockerexec -it postgres psql -U postgres
-# Or: docker exec -it postgres psql -U postgres
+docker exec -it postgres psql -U postgres
 ```
+Hoăc vào postgres bằng root user đã tồn tại (`n8n_root`)
+```bash
+docker exec -it postgres psql -U n8n_root -d n8n
+```
+
+Bước 2: kiểm tra user + quyền
+```bash
+\du
+```
+
+Bạn sẽ thấy:
+```
+                                   List of roles
+ Role name |                         Attributes                         | Member of     
+-----------+------------------------------------------------------------+-----------    
+ n8n_root  | Superuser, Create role, Create DB, Replication, Bypass RLS | {}
+```
+
+> ➡️Hiện tại trong database:
+- ❌ KHÔNG có role: n8n
+- ✅ CHỈ có role: n8n_root (superuser)
+
+> init-data.sh script này không tạo user/role n8n, chỉ có n8n_root !!
+## 3️⃣ Cách sửa ĐÚNG – KHÔNG mất dữ liệu (khuyến nghị)
+
+### 👉 Cách A (chuẩn prod): **Tạo user `n8n` thủ công**
+
+Trong psql (đang login bằng `n8n_root`):
+
+```sql
+CREATE USER n8n WITH PASSWORD 'Abc@1234';
+GRANT ALL PRIVILEGES ON DATABASE n8n TO n8n;
+```
+
+Thêm quyền schema (rất quan trọng với n8n v1/v2):
+
+```sql
+\c n8n
+
+GRANT ALL ON SCHEMA public TO n8n;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO n8n;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO n8n;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON TABLES TO n8n;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON SEQUENCES TO n8n;
+```
+
+Sau đó:
+
+```bash
+docker restart n8n n8n_worker
+```
+
+✅ n8n sẽ connect OK
+✅ Không mất dữ liệu
+✅ Đúng chuẩn security (non-root user)
 
 ### 2️⃣ Xác định DB n8n
 
@@ -380,11 +445,23 @@ Checklist:
 ## ⚠️ Lỗi thường gặp & cách fix
 
 ### ❌ `function gen_random_uuid() does not exist`
+Chi tiết:
+```
+Migration "ChangeDefaultForIdInUserTable1762771264000" failed, error: function gen_random_uuid() does not exist
 
+There was an error running database migrations
+
+function gen_random_uuid() does not exist
+```
 ➡️ Nguyên nhân: **thiếu pgcrypto trong DB cũ**
 
 ➡️ Fix:
 
+Vào postgres với user `n8n_root`, database `n8n`
+```bash
+docker exec -it postgres psql -U n8n_root -d n8n
+```
+Xong add extension:
 ```sql
 CREATE EXTENSION pgcrypto;
 ```
@@ -517,7 +594,7 @@ không phải lỗi n8n v2 hay migration.
 Log:
 
 ```
-password authentication failedforuser "n8n"
+password authentication failed for user "n8n"
 ```
 
 → n8n **đang đăng nhập bằng user `n8n`**, nhưng **password trong DB ≠ password trong `.env`**.
@@ -526,10 +603,42 @@ password authentication failedforuser "n8n"
 
 ### Bước 1️⃣ Vào Postgres bằng user **postgres**
 
-(chắc chắn tồn tại)
+Lệnh mẫu:
 
 ```bash
 dockerexec -it postgres psql -U postgres
+```
+
+
+**Troubleshootings**: Nếu gặp lỗi như sau:
+```bash
+psql: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL: 
+ role "postgres" does not exist
+```
+
+### ✅ Bước 1: Xem env thật bên trong container
+
+```bash
+docker inspect postgres --format='{{range .Config.Env}}{{println .}}{{end}}'
+```
+
+Ta sẽ thấy đại loại:
+
+```bash
+POSTGRES_USER=n8n_root
+POSTGRES_PASSWORD=****
+POSTGRES_NON_ROOT_USER=n8n
+POSTGRES_NON_ROOT_PASSWORD=***
+POSTGRES_DB=n8n
+```
+
+👉 **ĐÂY LÀ SỰ THẬT DUY NHẤT**
+
+### ✅ Bước 2: Dùng đúng user đó để vào psql
+
+Vào với tư cách user `n8n_root`, database `n8n`
+```bash
+docker exec -it postgres psql -U n8n_root -d n8n
 ```
 
 ---
@@ -562,12 +671,12 @@ Ta sẽ thấy:
 
 ⚠️ **password PHẢI đúng với `.env` hiện tại**
 
+**Nếu `POSTGRES_USER` là `n8n_root`:
 ```sql
-ALTERUSER n8nWITH PASSWORD'Abc@1234';
+ALTER USER n8n_root WITH PASSWORD 'Abc@1234';
 ```
 
-Nếu OK, bạn sẽ thấy:
-
+Nếu OK, sẽ trr về:
 ```
 ALTERROLE
 ```
